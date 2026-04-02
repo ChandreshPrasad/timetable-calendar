@@ -74,16 +74,18 @@ for row in rows[1:]:
         else:
             start_raw = masa.strip()
 
-        try:
+       try:
     if "-" in masa:
         start_raw, end_raw = masa.split("-")
         start_raw = start_raw.strip().replace(".", ":")
         end_raw = end_raw.strip().replace(".", ":")
-        
+
         start_time = datetime.strptime(start_raw, "%H:%M")
         end_time = datetime.strptime(end_raw, "%H:%M")
     else:
         continue
+except:
+    continue
     print("ROW:", cells)
 
 
