@@ -30,28 +30,44 @@ for row in rows[1:]:
 
     hari, masa, biljam, kursus, tajuk, setkursus, bilik = cells
 
+    # Skip faculty-referenced classes
+    if hari == "Rujuk Fakulti":
+        continue
+
+    # Handle blank day cells
     if hari != "":
         current_day = hari
 
     if current_day not in day_map:
         continue
 
-    start_time = datetime.strptime(masa, "%I:%M %p")
-    duration = int(biljam)
+    try:
+        start_time = datetime.strptime(masa, "%I:%M %p")
+    except ValueError:
+        continue
+
+    try:
+        duration = int(biljam)
+    except ValueError:
+        duration = 1
+
     end_time = start_time + timedelta(hours=duration)
 
     events.append({
         "day": current_day,
-        "start": start_time,
-        "end": end_time,
+        "course_code": kursus,
         "title": tajuk,
-        "room": bilik
+        "room": bilik,
+        "start": start_time,
+        "end": end_time
     })
+
 
 def create_ics(events):
     lines = [
         "BEGIN:VCALENDAR",
-        "VERSION:2.0"
+        "VERSION:2.0",
+        "PRODID:-//University Timetable//EN"
     ]
 
     for e in events:
@@ -59,10 +75,13 @@ def create_ics(events):
         start_str = e["start"].strftime("%H%M%S")
         end_str = e["end"].strftime("%H%M%S")
 
+        summary = f"{e['title']} ({e['course_code']})"
+        location = e["room"] if e["room"] else "TBA"
+
         lines.extend([
             "BEGIN:VEVENT",
-            f"SUMMARY:{e['title']}",
-            f"LOCATION:{e['room']}",
+            f"SUMMARY:{summary}",
+            f"LOCATION:{location}",
             f"DTSTART:20260406T{start_str}",
             f"DTEND:20260406T{end_str}",
             "RRULE:FREQ=WEEKLY",
@@ -72,5 +91,10 @@ def create_ics(events):
     lines.append("END:VCALENDAR")
     return "\n".join(lines)
 
+
+ics_content = create_ics(events)
+
 with open("timetable.ics", "w") as f:
-    f.write(create_ics(events))
+    f.write(ics_content)
+
+print("timetable.ics generated successfully")
