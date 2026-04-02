@@ -74,17 +74,20 @@ for row in rows[1:]:
         else:
             start_raw = masa.strip()
 
-        start_time = datetime.strptime(start_raw, "%I:%M %p")
-    except:
+        try:
+    if "-" in masa:
+        start_raw, end_raw = masa.split("-")
+        start_raw = start_raw.strip().replace(".", ":")
+        end_raw = end_raw.strip().replace(".", ":")
+        
+        start_time = datetime.strptime(start_raw, "%H:%M")
+        end_time = datetime.strptime(end_raw, "%H:%M")
+    else:
         continue
+    print("ROW:", cells)
 
-    try:
-        duration = int(biljam)
-    except:
-        continue
 
-    end_time = start_time + timedelta(hours=duration)
-
+   
     events.append({
         "day": current_day,
         "course": f"{tajuk} ({kursus})",
