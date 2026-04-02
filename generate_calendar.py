@@ -1,8 +1,28 @@
 import requests
+import os
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 
-URL = "YOUR_TIMETABLE_URL"
+LOGIN_URL = "https://www.ukm.my/smpweb/"
+TIMETABLE_URL = "https://smplucee.ukm.my/smpweb/sx020form.cfm"
+
+username = os.environ["UNI_USERNAME"]
+password = os.environ["UNI_PASSWORD"]
+
+session = requests.Session()
+
+login_payload = {
+    "username": username,
+    "password": password
+}
+
+session.post(LOGIN_URL, data=login_payload)
+
+response = session.get(TIMETABLE_URL)
+
+soup = BeautifulSoup(response.text, "html.parser")
+
+rows = soup.select("table tr")
 
 day_map = {
     "Isnin": 0,
@@ -13,11 +33,6 @@ day_map = {
     "Sabtu": 5,
     "Ahad": 6
 }
-
-response = requests.get(URL)
-soup = BeautifulSoup(response.text, "html.parser")
-
-rows = soup.select("table tr")
 
 events = []
 current_day = None
@@ -30,44 +45,33 @@ for row in rows[1:]:
 
     hari, masa, biljam, kursus, tajuk, setkursus, bilik = cells
 
-    # Skip faculty-referenced classes
     if hari == "Rujuk Fakulti":
         continue
 
-    # Handle blank day cells
     if hari != "":
         current_day = hari
 
     if current_day not in day_map:
         continue
 
-    try:
-        start_time = datetime.strptime(masa, "%I:%M %p")
-    except ValueError:
-        continue
-
-    try:
-        duration = int(biljam)
-    except ValueError:
-        duration = 1
-
+    start_time = datetime.strptime(masa, "%I:%M %p")
+    duration = int(biljam)
     end_time = start_time + timedelta(hours=duration)
 
     events.append({
         "day": current_day,
-        "course_code": kursus,
-        "title": tajuk,
+        "course": f"{tajuk} ({kursus})",
         "room": bilik,
         "start": start_time,
         "end": end_time
     })
 
-
 def create_ics(events):
+
     lines = [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
-        "PRODID:-//University Timetable//EN"
+        "PRODID:-//Timetable Export//EN"
     ]
 
     for e in events:
@@ -75,13 +79,10 @@ def create_ics(events):
         start_str = e["start"].strftime("%H%M%S")
         end_str = e["end"].strftime("%H%M%S")
 
-        summary = f"{e['title']} ({e['course_code']})"
-        location = e["room"] if e["room"] else "TBA"
-
         lines.extend([
             "BEGIN:VEVENT",
-            f"SUMMARY:{summary}",
-            f"LOCATION:{location}",
+            f"SUMMARY:{e['course']}",
+            f"LOCATION:{e['room']}",
             f"DTSTART:20260406T{start_str}",
             f"DTEND:20260406T{end_str}",
             "RRULE:FREQ=WEEKLY",
@@ -89,12 +90,10 @@ def create_ics(events):
         ])
 
     lines.append("END:VCALENDAR")
+
     return "\n".join(lines)
 
-
-ics_content = create_ics(events)
+ics = create_ics(events)
 
 with open("timetable.ics", "w") as f:
-    f.write(ics_content)
-
-print("timetable.ics generated successfully")
+    f.write(ics)
