@@ -2,6 +2,7 @@ import requests
 import os
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
+import uuid
 
 LOGIN_URL = "https://www.ukm.my/smpweb/"
 TIMETABLE_URL = "https://smplucee.ukm.my/smpweb/sx020form.cfm"
@@ -11,18 +12,30 @@ password = os.environ["UNI_PASSWORD"]
 
 session = requests.Session()
 
+# --- FIX 1: Add headers to avoid bot rejection ---
+headers = {
+    "User-Agent": "Mozilla/5.0"
+}
+
+# --- FIX 2: Proper login payload (adjust if needed) ---
 login_payload = {
     "username": username,
     "password": password
 }
 
-session.post(LOGIN_URL, data=login_payload)
+login_response = session.post(LOGIN_URL, data=login_payload, headers=headers)
 
-response = session.get(TIMETABLE_URL)
+# --- FIX 3: Validate login ---
+if "login" in login_response.url.lower():
+    raise Exception("Login failed - check credentials or form fields")
+
+response = session.get(TIMETABLE_URL, headers=headers)
 
 soup = BeautifulSoup(response.text, "html.parser")
 
-rows = soup.select("table tr")
+# --- FIX 4: Target the correct table (adjust if needed) ---
+table = soup.find("table")
+rows = table.find_all("tr") if table else []
 
 day_map = {
     "Isnin": 0,
@@ -54,8 +67,22 @@ for row in rows[1:]:
     if current_day not in day_map:
         continue
 
-    start_time = datetime.strptime(masa, "%I:%M %p")
-    duration = int(biljam)
+    # --- FIX 5: Robust time parsing ---
+    try:
+        if "-" in masa:
+            start_raw = masa.split("-")[0].strip()
+        else:
+            start_raw = masa.strip()
+
+        start_time = datetime.strptime(start_raw, "%I:%M %p")
+    except:
+        continue
+
+    try:
+        duration = int(biljam)
+    except:
+        continue
+
     end_time = start_time + timedelta(hours=duration)
 
     events.append({
@@ -66,6 +93,10 @@ for row in rows[1:]:
         "end": end_time
     })
 
+# --- DEBUG CHECK ---
+if len(events) == 0:
+    raise Exception("No events extracted - parsing failed")
+
 def create_ics(events):
 
     lines = [
@@ -74,17 +105,33 @@ def create_ics(events):
         "PRODID:-//Timetable Export//EN"
     ]
 
-    for e in events:
+    base_date = datetime(2026, 4, 6)  # Monday reference
 
-        start_str = e["start"].strftime("%H%M%S")
-        end_str = e["end"].strftime("%H%M%S")
+    for e in events:
+        event_date = base_date + timedelta(days=day_map[e["day"]])
+
+        start_dt = event_date.replace(
+            hour=e["start"].hour,
+            minute=e["start"].minute,
+            second=0
+        )
+
+        end_dt = event_date.replace(
+            hour=e["end"].hour,
+            minute=e["end"].minute,
+            second=0
+        )
+
+        uid = str(uuid.uuid4())
 
         lines.extend([
             "BEGIN:VEVENT",
+            f"UID:{uid}",
+            f"DTSTAMP:{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}",
             f"SUMMARY:{e['course']}",
             f"LOCATION:{e['room']}",
-            f"DTSTART:20260406T{start_str}",
-            f"DTEND:20260406T{end_str}",
+            f"DTSTART:{start_dt.strftime('%Y%m%dT%H%M%S')}",
+            f"DTEND:{end_dt.strftime('%Y%m%dT%H%M%S')}",
             "RRULE:FREQ=WEEKLY",
             "END:VEVENT"
         ])
