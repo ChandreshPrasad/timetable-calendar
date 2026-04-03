@@ -12,12 +12,10 @@ password = os.environ["UNI_PASSWORD"]
 
 session = requests.Session()
 
-# --- FIX 1: Add headers to avoid bot rejection ---
 headers = {
     "User-Agent": "Mozilla/5.0"
 }
 
-# --- FIX 2: Proper login payload (adjust if needed) ---
 login_payload = {
     "username": username,
     "password": password
@@ -25,7 +23,6 @@ login_payload = {
 
 login_response = session.post(LOGIN_URL, data=login_payload, headers=headers)
 
-# --- FIX 3: Validate login ---
 if "login" in login_response.url.lower():
     raise Exception("Login failed - check credentials or form fields")
 
@@ -33,7 +30,6 @@ response = session.get(TIMETABLE_URL, headers=headers)
 
 soup = BeautifulSoup(response.text, "html.parser")
 
-# --- FIX 4: Target the correct table (adjust if needed) ---
 table = soup.find("table")
 rows = table.find_all("tr") if table else []
 
@@ -51,6 +47,7 @@ events = []
 current_day = None
 
 for row in rows[1:]:
+
     cells = [c.get_text(strip=True) for c in row.find_all("td")]
 
     if len(cells) < 7:
@@ -67,29 +64,21 @@ for row in rows[1:]:
     if current_day not in day_map:
         continue
 
-    # --- FIX 5: Robust time parsing ---
     try:
         if "-" in masa:
-            start_raw = masa.split("-")[0].strip()
+            start_raw, end_raw = masa.split("-")
+
+            start_raw = start_raw.strip().replace(".", ":")
+            end_raw = end_raw.strip().replace(".", ":")
+
+            start_time = datetime.strptime(start_raw, "%H:%M")
+            end_time = datetime.strptime(end_raw, "%H:%M")
         else:
-            start_raw = masa.strip()
-
-       try:
-    if "-" in masa:
-        start_raw, end_raw = masa.split("-")
-        start_raw = start_raw.strip().replace(".", ":")
-        end_raw = end_raw.strip().replace(".", ":")
-
-        start_time = datetime.strptime(start_raw, "%H:%M")
-        end_time = datetime.strptime(end_raw, "%H:%M")
-    else:
+            continue
+    except:
+        print("Failed time parsing:", masa)
         continue
-except:
-    continue
-    print("ROW:", cells)
 
-
-   
     events.append({
         "day": current_day,
         "course": f"{tajuk} ({kursus})",
@@ -98,7 +87,6 @@ except:
         "end": end_time
     })
 
-# --- DEBUG CHECK ---
 if len(events) == 0:
     raise Exception("No events extracted - parsing failed")
 
@@ -110,9 +98,10 @@ def create_ics(events):
         "PRODID:-//Timetable Export//EN"
     ]
 
-    base_date = datetime(2026, 4, 6)  # Monday reference
+    base_date = datetime(2026, 4, 6)
 
     for e in events:
+
         event_date = base_date + timedelta(days=day_map[e["day"]])
 
         start_dt = event_date.replace(
@@ -145,7 +134,10 @@ def create_ics(events):
 
     return "\n".join(lines)
 
+
 ics = create_ics(events)
 
 with open("timetable.ics", "w") as f:
     f.write(ics)
+
+print("ICS file generated successfully.")
